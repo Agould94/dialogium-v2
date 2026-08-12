@@ -32,14 +32,28 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       data: {
         lessonId: lesson.id,
         questions: {
-          create: generated.questions.map((q, qi) => ({
-            order: qi,
-            kind: q.kind,
-            prompt: q.prompt,
-            options: q.options ? JSON.stringify(q.options) : null,
-            correctIndex: q.correctIndex,
-            rubric: q.rubric,
-          })),
+          create: generated.questions.map((q, qi) => {
+            let options = q.options;
+            let correctIndex = q.correctIndex;
+            // Models tend to list the correct option first; shuffle so position carries no signal.
+            if (q.kind === "multiple_choice" && options && correctIndex != null) {
+              const order = options.map((_, i) => i);
+              for (let i = order.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [order[i], order[j]] = [order[j], order[i]];
+              }
+              options = order.map((i) => q.options![i]);
+              correctIndex = order.indexOf(correctIndex);
+            }
+            return {
+              order: qi,
+              kind: q.kind,
+              prompt: q.prompt,
+              options: options ? JSON.stringify(options) : null,
+              correctIndex,
+              rubric: q.rubric,
+            };
+          }),
         },
       },
       include: { questions: { orderBy: { order: "asc" } } },
