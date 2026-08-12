@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Plan {
+  id         String   @id @default(cuid())
+  goal       String
+  background String
+  timeline   String
+  title      String
+  summary    String
+  createdAt  DateTime @default(now())
+  modules    Module[]
+}
+
+model Module {
+  id        String   @id @default(cuid())
+  planId    String
+  order     Int
+  title     String
+  objective String
+  plan      Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  lessons   Lesson[]
+}
+
+model Lesson {
+  id        String  @id @default(cuid())
+  moduleId  String
+  order     Int
+  title     String
+  objective String
+  content   String?
+  videos    String? // JSON: CuratedVideo[]
+  module    Module  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  quiz      Quiz?
+}
+
+model Quiz {
+  id        String     @id @default(cuid())
+  lessonId  String     @unique
+  lesson    Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  questions Question[]
+}
+
+model Question {
+  id           String    @id @default(cuid())
+  quizId       String
+  order        Int
+  kind         String // "multiple_choice" | "free_response"
+  prompt       String
+  options      String? // JSON: string[] for multiple choice
+  correctIndex Int?
+  rubric       String? // grading rubric for free response
+  quiz         Quiz      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  attempts     Attempt[]
+}
+
+model Attempt {
+  id         String   @id @default(cuid())
+  questionId String
+  answer     String
+  score      Int
+  maxScore   Int
+  feedback   String
+  createdAt  DateTime @default(now())
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}

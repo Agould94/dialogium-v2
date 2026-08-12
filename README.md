@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dialogium
 
-## Getting Started
+A goal-driven learning coach. You tell it what you want to be able to do — "pass the AWS Solutions Architect exam", "read Japanese manga", "understand transformers well enough to fine-tune one" — along with what you already know and how much time you have. It plans backward from that goal into modules and lessons, writes each lesson when you open it, curates real YouTube videos for it, and quizzes you with graded free-response feedback.
 
-First, run the development server:
+This is the second life of a 2023 GPT-3 project of the same name. The original asked the model to emit a rigid plain-text syllabus and parsed it by hand (and hallucinated YouTube links). Everything hard about that version is now an API primitive: structured outputs replace the parser, and the model writes search queries against the real YouTube API instead of inventing URLs.
+
+## Stack
+
+- Next.js 15 (App Router) + TypeScript + Tailwind
+- Prisma 6 + SQLite (`prisma/dev.db`, zero-setup local dev)
+- Anthropic TypeScript SDK, `claude-opus-5`, structured outputs via Zod
+- YouTube Data API v3 (optional — degrades to search links without a key)
+
+## Setup
 
 ```bash
+npm install
+cp .env.example .env   # then fill in your keys
+npx prisma db push     # creates prisma/dev.db
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`.env` keys:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `ANTHROPIC_API_KEY` — required; from https://console.anthropic.com
+- `YOUTUBE_API_KEY` — optional; from Google Cloud Console (YouTube Data API v3). Without it, lessons link to YouTube search results instead of curated videos.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## How it works
 
-## Learn More
+| Step | Route | Mechanism |
+|---|---|---|
+| Goal → plan | `POST /api/plans` | Structured output (Zod schema): backward-planned modules and lessons sized to the learner's timeline |
+| Lesson content | `POST /api/lessons/:id/generate` | Streamed Markdown (NDJSON), persisted on completion |
+| Video curation | same request, after content | Model writes search queries → YouTube API returns real candidates → model ranks by fit to the lesson objective |
+| Quiz | `POST /api/lessons/:id/quiz` | Structured output: multiple choice + free response with grading rubrics |
+| Grading | `POST /api/attempts` | Multiple choice graded deterministically; free responses graded by the model against the rubric with specific feedback |
 
-To learn more about Next.js, take a look at the following resources:
+## Roadmap
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Per-lesson Socratic tutor chat
+- Adaptive pathing: quiz results reshape the remaining plan (remedial lessons, skips)
+- Spaced repetition and "teach it back" review
+- Skill-specific practice environments (code exercises with runnable checks first)
+- Cross-plan concept knowledge graph
