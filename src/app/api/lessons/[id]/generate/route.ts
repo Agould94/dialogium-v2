@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { anthropic, MODEL } from "@/lib/anthropic";
 import { curateVideos } from "@/lib/youtube";
+import { consumeDailyBudget, DailyLimitError } from "@/lib/limits";
 
 export const maxDuration = 300;
 
@@ -17,6 +18,15 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   });
   if (!lesson) {
     return Response.json({ error: "Lesson not found." }, { status: 404 });
+  }
+
+  try {
+    await consumeDailyBudget("lesson");
+  } catch (e) {
+    if (e instanceof DailyLimitError) {
+      return Response.json({ error: e.message }, { status: 429 });
+    }
+    throw e;
   }
 
   const plan = lesson.module.plan;

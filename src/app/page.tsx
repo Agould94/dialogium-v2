@@ -1,12 +1,16 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import GoalForm from "./GoalForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
+  // Visitors see the demo plan plus plans created in their own browser session.
+  const sessionId = (await cookies()).get("dialogium_session")?.value;
   const plans = await db.plan.findMany({
-    orderBy: { createdAt: "desc" },
+    where: { OR: [{ isDemo: true }, ...(sessionId ? [{ sessionId }] : [])] },
+    orderBy: [{ isDemo: "desc" as const }, { createdAt: "desc" as const }],
     include: { modules: { include: { lessons: { select: { id: true } } } } },
   });
 
@@ -35,7 +39,14 @@ export default async function Home() {
                     href={`/plans/${plan.id}`}
                     className="block rounded-lg border border-neutral-200 p-4 transition-colors hover:border-neutral-400 dark:border-neutral-800 dark:hover:border-neutral-600"
                   >
-                    <div className="font-medium">{plan.title}</div>
+                    <div className="font-medium">
+                      {plan.title}
+                      {plan.isDemo && (
+                        <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-xs font-normal text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                          example
+                        </span>
+                      )}
+                    </div>
                     <div className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
                       {plan.goal}
                     </div>

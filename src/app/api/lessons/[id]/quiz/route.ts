@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateStructured } from "@/lib/anthropic";
 import { QuizSchema } from "@/lib/schemas";
+import { consumeDailyBudget, DailyLimitError } from "@/lib/limits";
 
 export const maxDuration = 300;
 
@@ -22,6 +23,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (lesson.quiz) return NextResponse.json(lesson.quiz);
 
   try {
+    await consumeDailyBudget("quiz");
     const generated = await generateStructured({
       schema: QuizSchema,
       system: QUIZ_SYSTEM,
@@ -61,6 +63,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
     return NextResponse.json(quiz, { status: 201 });
   } catch (e) {
+    if (e instanceof DailyLimitError) {
+      return NextResponse.json({ error: e.message }, { status: 429 });
+    }
     console.error("Quiz generation failed:", e);
     const message = e instanceof Error ? e.message : "Quiz generation failed.";
     return NextResponse.json({ error: message }, { status: 502 });

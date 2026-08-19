@@ -14,8 +14,19 @@ model Plan {
   timeline   String
   title      String
   summary    String
+  isDemo     Boolean  @default(false)
+  sessionId  String?
   createdAt  DateTime @default(now())
   modules    Module[]
+}
+
+// One row per model-backed API call; daily caps count these.
+model Usage {
+  id        String   @id @default(cuid())
+  kind      String // "plan" | "lesson" | "quiz" | "grade"
+  createdAt DateTime @default(now())
+
+  @@index([kind, createdAt])
 }
 
 model Module {

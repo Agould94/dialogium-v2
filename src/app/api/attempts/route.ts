@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateStructured } from "@/lib/anthropic";
 import { GradeSchema } from "@/lib/schemas";
+import { consumeDailyBudget, DailyLimitError } from "@/lib/limits";
 
 export const maxDuration = 300;
 
@@ -37,6 +38,7 @@ export async function POST(req: Request) {
           ? "Correct."
           : `Not quite — the correct answer is: ${options[correct] ?? "(unknown)"}`;
     } else {
+      await consumeDailyBudget("grade");
       const grade = await generateStructured({
         schema: GradeSchema,
         system: GRADING_SYSTEM,
@@ -54,6 +56,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(attempt, { status: 201 });
   } catch (e) {
+    if (e instanceof DailyLimitError) {
+      return NextResponse.json({ error: e.message }, { status: 429 });
+    }
     console.error("Grading failed:", e);
     const message = e instanceof Error ? e.message : "Grading failed.";
     return NextResponse.json({ error: message }, { status: 502 });

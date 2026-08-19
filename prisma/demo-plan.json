@@ -1,0 +1,162 @@
+{
+  "goal": "Understand how transformer language models work well enough to explain attention to a colleague",
+  "background": "Software developer, comfortable with Python, rusty linear algebra",
+  "timeline": "2 weeks, about 4 hours per week",
+  "title": "Attention, Demystified: From Dot Products to Explaining Transformers",
+  "summary": "Explaining attention convincingly requires three things: fluency with the handful of linear-algebra operations transformers are built from, a mechanical understanding of how query/key/value projections turn a sequence into context-aware representations, and a mental model of how attention blocks stack into a working language model. You already have the programming ability to read and run reference implementations, so the gap is mostly conceptual vocabulary plus refreshed matrix intuition. This two-week plan spends the first week rebuilding the math and tracing a single attention head by hand and in NumPy, and the second week scaling up to full transformer blocks, training/inference behavior, and rehearsing a clear verbal explanation.",
+  "modules": [
+    {
+      "title": "Week 1, Part 1: The Math You Actually Need",
+      "objective": "Reconstruct the specific linear-algebra operations transformers use — dot products as similarity, matrix multiplication as batched projection, and softmax as a weighting function — without needing a full linear algebra course.",
+      "lessons": [
+        {
+          "title": "Dot Products as Similarity Scores",
+          "objective": "Compute the dot product of two vectors by hand and explain why a larger dot product between normalized vectors means the vectors point in more similar directions.",
+          "content": "# Dot Products as Similarity Scores\n\nAttention, at its core, answers one question over and over: *when processing this word, how much should I pay attention to that other word?* The answer is a number. That number comes from a dot product. Everything else in the attention formula — the softmax, the value vectors, the scaling factor — is plumbing around this one operation.\n\nSo it's worth getting the dot product into your fingers, not just your notes.\n\n---\n\n## 1. The mechanic\n\nGiven two vectors of the same length, multiply them element-wise and add up the results.\n\n$$\\mathbf{a} \\cdot \\mathbf{b} = \\sum_{i} a_i b_i$$\n\nFor $\\mathbf{a} = [3, 4]$ and $\\mathbf{b} = [4, 3]$:\n\n```\n3 × 4 = 12\n4 × 3 = 12\n        ----\n        24\n```\n\nThat's it. In Python, without NumPy:\n\n```python\ndef dot(a, b):\n    return sum(x * y for x, y in zip(a, b))\n\ndot([3, 4], [4, 3])  # 24\n```\n\nTwo vectors in → one scalar out. Note that the output is a single number no matter how long the vectors are. A 768-dimensional dot product still collapses to one score. That's exactly what you want for \"how relevant is this token to that one.\"\n\n---\n\n## 2. Why the number means \"similar direction\"\n\nThe definition above is the *computational* one. There's an equivalent *geometric* one:\n\n$$\\mathbf{a} \\cdot \\mathbf{b} = \\|\\mathbf{a}\\| \\, \\|\\mathbf{b}\\| \\cos\\theta$$\n\nwhere $\\|\\mathbf{a}\\|$ is the length of $\\mathbf{a}$ (i.e. $\\sqrt{\\sum a_i^2}$, Pythagoras generalized) and $\\theta$ is the angle between the two vectors.\n\nYou don't need to derive this, but you do need to trust it, so here's the intuition. Imagine shining a light straight down onto $\\mathbf{b}$ and seeing where $\\mathbf{a}$'s shadow falls. That shadow — the *projection* of $\\mathbf{a}$ onto $\\mathbf{b}$ — has length $\\|\\mathbf{a}\\|\\cos\\theta$. The dot product is that shadow length, scaled by how long $\\mathbf{b}$ is.\n\n- If $\\mathbf{a}$ and $\\mathbf{b}$ point the same way, $\\theta = 0°$, $\\cos\\theta = 1$, the shadow is as long as $\\mathbf{a}$ itself. Dot product is maximal.\n- If they're perpendicular, $\\theta = 90°$, $\\cos\\theta = 0$, $\\mathbf{a}$ casts no shadow at all. Dot product is zero.\n- If they point opposite ways, $\\theta = 180°$, $\\cos\\theta = -1$. Dot product is maximally negative.\n\nCheck that against $\\mathbf{a} = [3,4]$, $\\mathbf{c} = [-4, 3]$:\n\n```\n3 × (-4) = -12\n4 ×   3  =  12\n           ----\n             0\n```\n\nZero — and indeed those two vectors are at right angles (rotate $[3,4]$ by 90° and you get $[-4,3]$).\n\n---\n\n## 3. Where normalization comes in\n\nThe geometric formula has a nuisance in it: $\\|\\mathbf{a}\\|\\,\\|\\mathbf{b}\\|$. A long vector produces big dot products with *everything*, regardless of direction. If you're ranking candidates by similarity, a merely-adjacent-but-very-long vector can outscore a perfectly-aligned-but-short one.\n\n**Normalizing** removes that confound. To normalize, divide a vector by its own length:\n\n$$\\hat{\\mathbf{a}} = \\frac{\\mathbf{a}}{\\|\\mathbf{a}\\|}$$\n\n$\\mathbf{a} = [3,4]$ has length $\\sqrt{9+16} = 5$, so $\\hat{\\mathbf{a}} = [0.6, 0.8]$. Check: $0.6^2 + 0.8^2 = 0.36 + 0.64 = 1$. ✓\n\nNow, if both vectors have length 1, the geometric formula collapses:\n\n$$\\hat{\\mathbf{a}} \\cdot \\hat{\\mathbf{b}} = 1 \\cdot 1 \\cdot \\cos\\theta = \\cos\\theta$$\n\n**The dot product of two normalized vectors *is* the cosine of the angle between them.** It lives in $[-1, 1]$, and it depends on nothing but direction. That's the sentence to say to your colleague:\n\n> A bigger dot product between unit vectors means a smaller angle between them — the length is factored out, so the only thing left that the number can be reporting is alignment.\n\nThis quantity has a name you'll see everywhere: **cosine similarity**.\n\n| $\\hat{\\mathbf{a}} \\cdot \\hat{\\mathbf{b}}$ | Angle | Reading |\n|---|---|---|\n| 1.0 | 0° | identical direction |\n| ~0.9 | ~25° | strongly related |\n| 0.0 | 90° | unrelated / orthogonal |\n| −1.0 | 180° | opposite |\n\n---\n\n## 4. Worked example: a toy attention score\n\nForget learned embeddings for a moment. Suppose we hand-build a 4-dimensional space where the axes mean:\n\n`[ animal-ness, machine-ness, edible-ness, emotion-ness ]`\n\nHere are five word vectors, all chosen with length exactly 5 to keep the arithmetic clean:\n\n| word | vector | length |\n|---|---|---|\n| **puppy** (our query) | $[4, 0, 0, 3]$ | $\\sqrt{16+9}=5$ |\n| kitten | $[3, 0, 0, 4]$ | $\\sqrt{9+16}=5$ |\n| engine | $[0, 5, 0, 0]$ | $5$ |\n| steak | $[3, 0, 4, 0]$ | $\\sqrt{9+16}=5$ |\n| algorithm | $[0, 3, 0, -4]$ | $\\sqrt{9+16}=5$ |\n\nCompute `puppy · each key` by hand:\n\n**puppy · kitten**\n```\n4×3 = 12\n0×0 =  0\n0×0 =  0\n3×4 = 12\n      ---\n       24\n```\n\n**puppy · engine**\n```\n4×0 = 0\n0×5 = 0\n0×0 = 0\n3×0 = 0\n      ---\n        0\n```\n\n**puppy · steak**\n```\n4×3 = 12\n0×0 =  0\n0×4 =  0\n3×0 =  0\n      ---\n       12\n```\n\n**puppy · algorithm**\n```\n4×0  =   0\n0×3  =   0\n0×0  =   0\n3×(-4) = -12\n        ----\n         -12\n```\n\nSince every vector here has length 5, the cosine similarity is just the dot product divided by $5 \\times 5 = 25$:\n\n| key | dot | cosine | angle |\n|---|---|---|---|\n| kitten | 24 | 0.96 | ≈ 16° |\n| steak | 12 | 0.48 | ≈ 61° |\n| engine | 0 | 0.00 | 90° |\n| algorithm | −12 | −0.48 | ≈ 119° |\n\nThe ranking matches intuition: kitten shares both animal-ness and emotion-ness with puppy, so it's nearly aligned. Steak shares animal-ness only — related, but at a wide angle. Engine shares nothing; it lives on an axis puppy has no component along, so it's exactly orthogonal. Algorithm is *anti*-aligned on the emotion axis, which drags the score below zero.\n\nThis is, structurally, one row of an attention score matrix. A real transformer computes puppy's *query* vector and every other token's *key* vector, dot-products the query against all the keys, and gets exactly this kind of ranked list of numbers — which a softmax then turns into weights that sum to 1.\n\nVerify the arithmetic:\n\n```python\nimport numpy as np\n\npuppy = np.array([4, 0, 0, 3])\nkeys = {\n    \"kitten\":    np.array([3, 0, 0, 4]),\n    \"engine\":    np.array([0, 5, 0, 0]),\n    \"steak\":     np.array([3, 0, 4, 0]),\n    \"algorithm\": np.array([0, 3, 0, -4]),\n}\n\nfor name, k in keys.items():\n    raw = puppy @ k\n    cos = raw / (np.linalg.norm(puppy) * np.linalg.norm(k))\n    print(f\"{name:10s} dot={raw:4d}  cos={cos:+.2f}  angle={np.degrees(np.arccos(cos)):.0f}°\")\n```\n\n---\n\n## 5. One honest caveat to keep in your pocket\n\nTransformers do **not** normalize queries and keys before taking the dot product. They compute raw $\\mathbf{q} \\cdot \\mathbf{k}$, then divide by $\\sqrt{d_k}$ (the square root of the vector dimension). So the scores aren't strictly cosines — magnitude does contribute.\n\nThat's fine, and we'll unpack the $\\sqrt{d_k}$ later in the week. The reason to learn the normalized case first is that it isolates the *why*: it proves the dot product is fundamentally an alignment measure, with magnitude riding along as a separate, optional signal. If a colleague asks \"why does multiplying and summing tell you anything about meaning?\", the unit-vector story is the answer.\n\n---\n\n## Try it yourself\n\nUsing the same 4-axis space (`[animal, machine, edible, emotion]`), take the query vector\n\n$$\\mathbf{q} = \\text{robot} = [0, 6, 0, 8]$$\n\nand these three keys:\n\n- $\\mathbf{k}_1 = \\text{drone} = [0, 5, 0, 0]$\n- $\\mathbf{k}_2 = \\text{puppy} = [4, 0, 0, 3]$\n- $\\mathbf{k}_3 = \\text{toaster} = [0, 4, 0, -3]$\n\n1. Compute all three dot products **by hand**, showing the element-wise products.\n2. Compute $\\|\\mathbf{q}\\|$ and each $\\|\\mathbf{k}\\|$, then convert each dot product to a cosine similarity.\n3. Notice that drone gets a *lower* raw dot product than one of the others but a competitive cosine — or vice versa. Which key benefits most from *not* normalizing, and why?\n4. Write two sentences you'd actually say out loud to a colleague explaining why a large dot product between unit vectors means \"similar direction.\" Don't use the word \"cosine\" in the first sentence.\n\nThen check yourself with NumPy.",
+          "videos": "[{\"videoId\":null,\"title\":\"Search YouTube: dot product as a measure of similarity between vectors explained\",\"channel\":null,\"url\":\"https://www.youtube.com/results?search_query=dot%20product%20as%20a%20measure%20of%20similarity%20between%20vectors%20explained\",\"thumbnail\":null,\"reason\":null,\"isSearchLink\":true},{\"videoId\":null,\"title\":\"Search YouTube: how to compute dot product of two vectors by hand step by step\",\"channel\":null,\"url\":\"https://www.youtube.com/results?search_query=how%20to%20compute%20dot%20product%20of%20two%20vectors%20by%20hand%20step%20by%20step\",\"thumbnail\":null,\"reason\":null,\"isSearchLink\":true},{\"videoId\":null,\"title\":\"Search YouTube: why dot product measures similarity cosine similarity intuition attention\",\"channel\":null,\"url\":\"https://www.youtube.com/results?search_query=why%20dot%20product%20measures%20similarity%20cosine%20similarity%20intuition%20attention\",\"thumbnail\":null,\"reason\":null,\"isSearchLink\":true}]",
+          "quiz": {
+            "questions": [
+              {
+                "kind": "multiple_choice",
+                "prompt": "Compute the dot product of a = [2, −1, 3] and b = [4, 5, 1] by hand.",
+                "options": "[\"6\",\"16\",\"0\",\"14\"]",
+                "correctIndex": 0,
+                "rubric": null
+              },
+              {
+                "kind": "multiple_choice",
+                "prompt": "In the 4-axis toy space [animal, machine, edible, emotion], the query robot = [0, 6, 0, 8] and the key toaster = [0, 4, 0, −3] have a dot product of exactly 0. What does that tell you about the two vectors?",
+                "options": "[\"They are at a 90° angle: the positive machine-ness overlap is exactly cancelled by the opposite emotion-ness components, so there is no net alignment.\",\"They are identical in direction but different in length, which is why the score cancels to zero.\",\"One of them must be the zero vector, since only that gives a dot product of 0.\",\"They point in opposite directions, which is the most negative score possible.\"]",
+                "correctIndex": 0,
+                "rubric": null
+              },
+              {
+                "kind": "multiple_choice",
+                "prompt": "Let q = [1, 0], A = [3, 4], and B = [1, 0.2]. Which statement is correct?",
+                "options": "[\"A gets the larger raw dot product (3 vs. 1), but B points in a more similar direction to q (cosine ≈ 0.98 vs. 0.6).\",\"B gets both the larger raw dot product and the larger cosine similarity, because it is closer in direction.\",\"A gets both the larger raw dot product and the larger cosine similarity, because raw dot product and cosine always rank vectors identically.\",\"Neither cosine can be compared, because cosine similarity is only defined for vectors of the same length.\"]",
+                "correctIndex": 0,
+                "rubric": null
+              },
+              {
+                "kind": "multiple_choice",
+                "prompt": "Why does the lesson teach the normalized (unit-vector) case first, even though transformers feed raw q·k into the softmax after dividing by √d_k?",
+                "options": "[\"Because with lengths fixed at 1 the only thing the dot product can vary with is the angle, which isolates the reason multiplying-and-summing measures alignment at all.\",\"Because transformers actually normalize q and k internally, and √d_k is just a rounding correction.\",\"Because unnormalized dot products cannot be compared to each other in any meaningful way.\",\"Because cosine similarity is bounded in [−1, 1], and softmax requires inputs in that range.\"]",
+                "correctIndex": 0,
+                "rubric": null
+              },
+              {
+                "kind": "free_response",
+                "prompt": "Take q = robot = [0, 6, 0, 8] and k = toaster = [0, 4, 0, −3]. (a) Compute q · k, showing the element-wise products. (b) Compute ‖q‖ and ‖k‖ and convert the dot product into a cosine similarity. (c) In two or three sentences you'd actually say out loud to a colleague, explain why a larger dot product between two *normalized* vectors means they point in more similar directions.",
+                "options": null,
+                "correctIndex": null,
+                "rubric": "(a) Shows element-wise products 0×0=0, 6×4=24, 0×0=0, 8×(−3)=−24 and sums them to 0. (b) ‖q‖ = √(36+64) = 10 and ‖k‖ = √(16+9) = 5; cosine = 0 / (10×5) = 0, i.e. a 90° angle / orthogonal, so these two words are unrelated in this space. (c) Explanation must convey that the dot product equals ‖a‖‖b‖cos θ, so when both vectors are scaled to length 1 the magnitude factors become 1 and the score is exactly cos θ — the only remaining variable is the angle, hence a bigger number can only mean a smaller angle (better alignment), with the score bounded in [−1, 1]. Credit is also given for the projection/'shadow' intuition (how much of one vector lies along the other) and for noting that normalizing removes the confound where a merely long vector scores high against everything. A complete answer states the direction of the relationship correctly (bigger score ⇒ smaller angle ⇒ more similar), not merely that the two are related."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Matrix Multiplication as a Batch of Projections",
+          "objective": "Given a (sequence_length × d_model) matrix and a (d_model × d_k) weight matrix, state the output shape and explain what each row of the result represents.",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        },
+        {
+          "title": "Softmax and Turning Scores into Weights",
+          "objective": "Apply softmax to a vector of raw scores by hand, verify the outputs sum to 1, and explain how scaling scores up or down sharpens or flattens the resulting distribution.",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        }
+      ]
+    },
+    {
+      "title": "Week 1, Part 2: From Text to Vectors",
+      "objective": "Trace how a string of text becomes the numeric matrix that attention operates on, and explain why positional information must be added explicitly.",
+      "lessons": [
+        {
+          "title": "Tokenization and the Embedding Table",
+          "objective": "Explain how a subword tokenizer splits text into token IDs and how an embedding lookup converts those IDs into a sequence of vectors; predict the shape of the resulting matrix for a given input.",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        },
+        {
+          "title": "Why Position Must Be Encoded",
+          "objective": "Demonstrate that attention is permutation-invariant without positional information, and describe at least one scheme (sinusoidal or learned) for injecting position.",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        }
+      ]
+    },
+    {
+      "title": "Week 2, Part 1: Attention Itself",
+      "objective": "Explain scaled dot-product attention mechanically — every matrix, every shape, every reason — and implement a single head in NumPy.",
+      "lessons": [
+        {
+          "title": "Queries, Keys, and Values",
+          "objective": "Describe the role of Q, K, and V using a retrieval analogy, and state which learned weight matrix produces each from the input embeddings.",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        },
+        {
+          "title": "The Attention Formula, Line by Line",
+          "objective": "Write out softmax(QKᵀ/√d_k)V from memory and justify each component, including why the scores are divided by √d_k.",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        },
+        {
+          "title": "Implementing One Attention Head in NumPy",
+          "objective": "Write a working single-head attention function in ~20 lines of NumPy and verify the attention weight matrix rows sum to 1.",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        },
+        {
+          "title": "Causal Masking and Autoregressive Generation",
+          "objective": "Modify the attention implementation to apply a causal mask, and explain why a language model predicting the next token must not attend to future positions.",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        }
+      ]
+    },
+    {
+      "title": "Week 2, Part 2: The Full Model and the Explanation",
+      "objective": "Assemble attention into a complete transformer, understand what training and inference actually do, and deliver a clear five-minute explanation to a colleague.",
+      "lessons": [
+        {
+          "title": "Multi-Head Attention",
+          "objective": "Explain why multiple heads with smaller d_k are used instead of one large head, and trace how head outputs are concatenated and projected back to d_model.",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        },
+        {
+          "title": "Inside a Transformer Block",
+          "objective": "Diagram a full block — attention, residual connection, layer norm, feed-forward network — and state the purpose of each residual and normalization step.",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        },
+        {
+          "title": "Training and Generation in Practice",
+          "objective": "Explain next-token prediction with cross-entropy loss, and describe how a trained model generates text one token at a time, including the role of temperature in sampling.",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        },
+        {
+          "title": "Rehearsing the Explanation",
+          "objective": "Deliver a five-minute whiteboard explanation of attention using one worked example sentence, and answer three likely follow-up questions (why not RNNs, what the heads learn, why it scales quadratically with sequence length).",
+          "content": null,
+          "videos": null,
+          "quiz": null
+        }
+      ]
+    }
+  ]
+}

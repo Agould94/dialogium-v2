@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import { generateStructured } from "@/lib/anthropic";
 import { PlanSchema } from "@/lib/schemas";
+import { consumeDailyBudget, DailyLimitError } from "@/lib/limits";
 
 export const maxDuration = 300;
 
@@ -17,7 +20,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Tell us what you want to achieve." }, { status: 400 });
   }
 
+  // Plans are scoped to an anonymous session cookie so visitors only see their own.
+  const cookieStore = await cookies();
+  let sessionId = cookieStore.get("dialogium_session")?.value;
+  if (!sessionId) {
+    sessionId = randomUUID();
+    cookieStore.set("dialogium_session", sessionId, {
+      httpOnly: true,
+      sameSite: "none",
+      secure: true,
+      maxAge: 60 * 60 * 24 * 365,
+    });
+  }
+
   try {
+    await consumeDailyBudget("plan");
     const generated = await generateStructured({
       schema: PlanSchema,
       system: PLAN_SYSTEM,
@@ -29,6 +46,7 @@ export async function POST(req: Request) {
         goal,
         background: background ?? "",
         timeline: timeline ?? "",
+        sessionId,
         title: generated.title,
         summary: generated.summary,
         modules: {
@@ -50,6 +68,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ id: plan.id }, { status: 201 });
   } catch (e) {
+    if (e instanceof DailyLimitError) {
+      return NextResponse.json({ error: e.message }, { status: 429 });
+    }
     console.error("Plan generation failed:", e);
     const message = e instanceof Error ? e.message : "Plan generation failed.";
     return NextResponse.json({ error: message }, { status: 502 });
