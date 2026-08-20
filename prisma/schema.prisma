@@ -41,15 +41,29 @@ model Module {
 }
 
 model Lesson {
-  id        String  @id @default(cuid())
+  id        String     @id @default(cuid())
   moduleId  String
   order     Int
   title     String
   objective String
   content   String?
   videos    String? // JSON: CuratedVideo[]
-  module    Module  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  module    Module     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
   quiz      Quiz?
+  dives     DeepDive[]
+}
+
+// Cached on-demand deep dives: one per (lesson, normalized selection).
+model DeepDive {
+  id           String   @id @default(cuid())
+  lessonId     String
+  selectionKey String // normalized selection text, cache key
+  selection    String // as highlighted
+  content      String // markdown, may embed a ```viz fenced block
+  createdAt    DateTime @default(now())
+  lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([lessonId, selectionKey])
 }
 
 model Quiz {

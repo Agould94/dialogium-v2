@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
 import type { CuratedVideo } from "@/lib/schemas";
+import DiveableArticle from "./DeepDive";
 
 type QuizQuestion = {
   id: string;
@@ -92,9 +92,7 @@ export default function LessonView(props: {
         <p className="animate-pulse text-sm text-neutral-500">Writing your lesson…</p>
       )}
 
-      <article className="prose prose-neutral max-w-none dark:prose-invert">
-        <ReactMarkdown>{content}</ReactMarkdown>
-      </article>
+      <DiveableArticle lessonId={props.lessonId} content={content} />
 
       {curating && (
         <p className="mt-6 animate-pulse text-sm text-neutral-500">Finding videos worth your time…</p>

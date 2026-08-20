@@ -7,7 +7,7 @@ export const maxDuration = 300;
 
 const LESSON_SYSTEM = `You are Dialogium, a learning coach writing one lesson inside a learner's study plan.
 
-Write the lesson in Markdown. Teach toward the stated objective: explain the ideas, include at least one worked example or concrete scenario, and close with a short "try it yourself" prompt. Write for the learner's stated background — no filler like "welcome" or "congratulations".`;
+Write the lesson in Markdown, with all mathematics as LaTeX ($inline$, $$block$$). Teach toward the stated objective: explain the ideas, include at least one worked example or concrete scenario, and close with a short "try it yourself" prompt. Write for the learner's stated background — no filler like "welcome" or "congratulations".`;
 
 // Streams NDJSON lines: {type:"text"|"videos"|"done"|"error", ...}
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -7,6 +7,7 @@ const DAILY_LIMITS: Record<string, number> = {
   lesson: Number(process.env.LESSON_DAILY_LIMIT ?? 150),
   quiz: Number(process.env.QUIZ_DAILY_LIMIT ?? 150),
   grade: Number(process.env.GRADE_DAILY_LIMIT ?? 300),
+  dive: Number(process.env.DIVE_DAILY_LIMIT ?? 150),
 };
 
 export class DailyLimitError extends Error {
@@ -21,7 +22,7 @@ export class DailyLimitError extends Error {
 // Throws DailyLimitError if the day's budget for this kind is spent; otherwise
 // records the call. Recorded before the model call, so failures still count —
 // slightly conservative, which is the right direction for a spend guard.
-export async function consumeDailyBudget(kind: "plan" | "lesson" | "quiz" | "grade") {
+export async function consumeDailyBudget(kind: "plan" | "lesson" | "quiz" | "grade" | "dive") {
   const startOfDayUtc = new Date();
   startOfDayUtc.setUTCHours(0, 0, 0, 0);
 
