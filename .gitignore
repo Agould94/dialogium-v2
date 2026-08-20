@@ -44,3 +44,6 @@ next-env.d.ts
 !.env.example
 prisma/dev.db
 public/version.json
+
+.vercel
+.env*
